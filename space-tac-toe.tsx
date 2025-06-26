@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Zap, Shield, RotateCcw, Trophy } from "lucide-react"
+import { Bug, Skull, RotateCcw, Trophy } from "lucide-react"
 
 type Player = "marine" | "alien" | null
 type GameState = "playing" | "selecting-removal" | "game-over"
@@ -16,6 +16,7 @@ interface GameBoard {
   winner: Player
   canRemove: boolean
   removingPlayer: Player
+  lastPlacedIndex: number | null
   marineScore: number
   alienScore: number
 }
@@ -28,6 +29,7 @@ export default function SpaceTacToe() {
     winner: null,
     canRemove: false,
     removingPlayer: null,
+    lastPlacedIndex: null,
     marineScore: 0,
     alienScore: 0,
   })
@@ -73,9 +75,36 @@ export default function SpaceTacToe() {
     return board.every((cell) => cell !== null) ? ("draw" as Player) : null
   }
 
+  const getAdjacentEnemies = (board: Player[], index: number, currentPlayer: Player): number[] => {
+    const adjacentIndices = getAdjacentIndices(index)
+    return adjacentIndices.filter((i) => board[i] && board[i] !== currentPlayer)
+  }
+
+  const getAdjacentIndices = (index: number): number[] => {
+    const row = Math.floor(index / 3)
+    const col = index % 3
+    const adjacent: number[] = []
+
+    // Check all 8 directions (including diagonals)
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue // Skip the center cell
+
+        const newRow = row + dr
+        const newCol = col + dc
+
+        if (newRow >= 0 && newRow < 3 && newCol >= 0 && newCol < 3) {
+          adjacent.push(newRow * 3 + newCol)
+        }
+      }
+    }
+
+    return adjacent // Add this missing return statement
+  }
+
   const handleCellClick = (index: number) => {
     if (game.gameState === "selecting-removal") {
-      // Remove opponent piece
+      // Remove opponent piece - must be adjacent to the last placed piece
       if (game.board[index] && game.board[index] !== game.removingPlayer) {
         const newBoard = [...game.board]
         newBoard[index] = null
@@ -88,6 +117,7 @@ export default function SpaceTacToe() {
           winner,
           canRemove: false,
           removingPlayer: null,
+          lastPlacedIndex: null,
           currentPlayer: prev.currentPlayer === "marine" ? "alien" : "marine",
         }))
       }
@@ -101,7 +131,7 @@ export default function SpaceTacToe() {
 
     const winner = checkWinner(newBoard)
     const hasTwoInARow = checkTwoInARow(newBoard, game.currentPlayer)
-    const opponentHasPieces = newBoard.some((cell) => cell && cell !== game.currentPlayer)
+    const adjacentEnemies = getAdjacentEnemies(newBoard, index, game.currentPlayer)
 
     if (winner) {
       const newMarineScore = winner === "marine" ? game.marineScore + 1 : game.marineScore
@@ -115,13 +145,14 @@ export default function SpaceTacToe() {
         marineScore: newMarineScore,
         alienScore: newAlienScore,
       }))
-    } else if (hasTwoInARow && opponentHasPieces) {
+    } else if (hasTwoInARow && adjacentEnemies.length > 0) {
       setGame((prev) => ({
         ...prev,
         board: newBoard,
         gameState: "selecting-removal",
         canRemove: true,
         removingPlayer: game.currentPlayer,
+        lastPlacedIndex: index,
       }))
     } else {
       setGame((prev) => ({
@@ -141,6 +172,7 @@ export default function SpaceTacToe() {
       winner: null,
       canRemove: false,
       removingPlayer: null,
+      lastPlacedIndex: null,
     }))
   }
 
@@ -156,45 +188,52 @@ export default function SpaceTacToe() {
   const renderCell = (index: number) => {
     const cell = game.board[index]
     const isClickable = game.gameState === "playing" && !cell
-    const isRemovable = game.gameState === "selecting-removal" && cell && cell !== game.removingPlayer
+
+    // Check if this cell is an adjacent enemy that can be removed
+    const isRemovable =
+      game.gameState === "selecting-removal" &&
+      cell &&
+      cell !== game.removingPlayer &&
+      game.lastPlacedIndex !== null &&
+      getAdjacentIndices(game.lastPlacedIndex).includes(index)
 
     return (
       <button
         key={index}
         onClick={() => handleCellClick(index)}
         className={`
-          aspect-square w-full border-2 border-slate-600 bg-slate-900 
+          aspect-square w-full border-2 border-amber-600 bg-slate-900 
           flex items-center justify-center text-4xl font-bold
-          transition-all duration-200 hover:bg-slate-800
-          ${isClickable ? "hover:border-blue-400 cursor-pointer" : ""}
-          ${isRemovable ? "hover:border-red-400 cursor-pointer animate-pulse" : ""}
+          transition-all duration-200 hover:bg-red-950
+          ${isClickable ? "hover:border-amber-400 cursor-pointer hover:shadow-lg hover:shadow-amber-400/20" : ""}
+          ${isRemovable ? "hover:border-red-400 cursor-pointer animate-pulse hover:shadow-lg hover:shadow-red-400/20" : ""}
           ${!isClickable && !isRemovable ? "cursor-not-allowed" : ""}
         `}
         disabled={game.gameState === "game-over"}
       >
-        {cell === "marine" && <Shield className="w-8 h-8 text-blue-400" />}
-        {cell === "alien" && <Zap className="w-8 h-8 text-green-400" />}
+        {cell === "marine" && <Skull className="w-8 h-8 text-amber-400" />}
+        {cell === "alien" && <Bug className="w-8 h-8 text-purple-400" />}
       </button>
     )
   }
 
   const getStatusMessage = () => {
     if (game.gameState === "selecting-removal") {
-      const playerName = game.removingPlayer === "marine" ? "Space Marines" : "Aliens"
-      return `${playerName} got two in a row! Click an enemy piece to remove it.`
+      const playerName = game.removingPlayer === "marine" ? "The Emperor's Finest" : "The Hive Mind"
+      return `${playerName} strike with precision! Select an adjacent enemy to eliminate.`
     }
 
     if (game.winner === "draw") {
-      return "It's a draw! The battle continues..."
+      return "Stalemate! The battle rages eternal..."
     }
 
     if (game.winner) {
-      const winnerName = game.winner === "marine" ? "Space Marines" : "Aliens"
-      return `${winnerName} win this battle!`
+      const winnerName = game.winner === "marine" ? "The Imperium of Man" : "The Great Devourer"
+      return `${winnerName} claims victory in this engagement!`
     }
 
-    const currentPlayerName = game.currentPlayer === "marine" ? "Space Marines" : "Aliens"
-    return `${currentPlayerName} turn`
+    const currentPlayerName = game.currentPlayer === "marine" ? "Space Marines" : "Tyranid Swarm"
+    return `${currentPlayerName} advance`
   }
 
   return (
@@ -206,16 +245,16 @@ export default function SpaceTacToe() {
 
             <div className="flex justify-center gap-8 mb-4">
               <div className="flex items-center gap-2">
-                <Shield className="w-6 h-6 text-blue-400" />
-                <span className="text-blue-400 font-semibold">Marines</span>
-                <Badge variant="secondary" className="bg-blue-900 text-blue-100">
+                <Skull className="w-6 h-6 text-amber-400" />
+                <span className="text-amber-400 font-semibold">Marines</span>
+                <Badge variant="secondary" className="bg-amber-900 text-amber-100">
                   {game.marineScore}
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
-                <Zap className="w-6 h-6 text-green-400" />
-                <span className="text-green-400 font-semibold">Aliens</span>
-                <Badge variant="secondary" className="bg-green-900 text-green-100">
+                <Bug className="w-6 h-6 text-purple-400" />
+                <span className="text-purple-400 font-semibold">Aliens</span>
+                <Badge variant="secondary" className="bg-purple-900 text-purple-100">
                   {game.alienScore}
                 </Badge>
               </div>
